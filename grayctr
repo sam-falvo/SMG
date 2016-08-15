@@ -1,0 +1,12 @@
+(do
+ (put next bus-spec "[2:0]")
+
+ [[on [[ctr 3'b000] ~reset] [next 3'b001] [odd 0]]
+  [on [[ctr 3'b001] ~reset] [next 3'b011] [odd 1]]
+  [on [[ctr 3'b011] ~reset] [next 3'b010] [odd 0]]
+  [on [[ctr 3'b010] ~reset] [next 3'b110] [odd 1]]
+  [on [[ctr 3'b110] ~reset] [next 3'b111] [odd 0]]
+  [on [[ctr 3'b111] ~reset] [next 3'b101] [odd 1]]
+  [on [[ctr 3'b101] ~reset] [next 3'b100] [odd 0]]
+  [on [[ctr 3'b100] ~reset] [next 3'b000] [odd 1]]]
+)
