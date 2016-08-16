@@ -390,3 +390,12 @@ width; if it's required, it'll be part of the module's declaration:
 	[X | []] -> (as-string X)
 	[X | Xs] -> (make-string "~A|~A" (as-string X) (ored Xs)))
 
+\*
+To produce the complete listing, use the following statement:
+
+	(verilog-from-sm (value grayctr))
+*\
+
+(define verilog-from-sm
+	WorkingState -> (filter-bindings (filter-outputs (filter-recognizers WorkingState))))
+
