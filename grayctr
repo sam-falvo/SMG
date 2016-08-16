@@ -10,5 +10,5 @@
   [on [[ctr 3'b101] ~reset] [next 3'b100] [odd 0]]
   [on [[ctr 3'b100] ~reset] [next 3'b000] [odd 1]]
 
-  [on [reset]               [next 3'b000] [odd 0]]
+  [on [reset]               [next 3'b000]]]
 )

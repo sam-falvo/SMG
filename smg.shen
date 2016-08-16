@@ -287,27 +287,60 @@ out100 (and friends) in a (label * (list symbol)) mapping.
 The final step is to transpose the matrix, so to speak, and extract out all the
 terms targeting next:
 
-	\\ Shen working state
-
-	[[on R0]
-	 [on R1]
-	 [on R2]
-	 [on R3]
-	 [on R4]
-	 [on R5]
-	 [on R6]
-	 [on R7]]
-
 	[next [out0 out1 out2 out3 out4 out5 out6 out7]]
 
 At this point, we generate our wire-OR sequence:
 
 	wire [2:0] next = |{out0,out1,out2,out3,out4,out5,out6,out7};
 
-After this step, we filter out all the empty on-clauses, leaving us just with:
+We'll need to do this for every output the user provides us.  However, there's
+really no way of predicting how many outputs there will be.  Thus, I will use
+those associative functions again to let Shen decide how best to keep proper
+accounting of what we find.
 
-	[]
+The strategy is simple enough.  For each row in what's left of our working
+state, we process all the remaining output bindings.  For each binding we find,
+we append the wire name to a list dedicated just for that output.  Putting this
+into concrete terms, if we have the following structure:
 
-When we get to this point, we know we're done, and the Verilog should be
-correct.
+	[[on R0 [next out0] [irq out1]]
+	 [on R1 [next out2]]
+	 [on R2 [next out3] [irq out4]]
+	 [on R3 [next out4]]
+	 [on R4 [next out5] [eoi out6]]]
+
+After stepping through the first element of the list, we discover next and irq
+as outputs, so our association database looks (logically!) like:
+
+	[[next bindings | [out0]] [irq bindings | [out1]]]
+
+After the next row is processed, we only find next, so our state becomes:
+
+	[[next bindings | [out2 out0]] [irq bindings | [out1]]]
+
+and so on through the rest of the rows.  After all is done with, we should end
+up with an association structure like this:
+
+	[[[next bindings] | [out5 out4 out3 out2 out0]]
+	 [[irq bindings] | [out4 out1]]
+	 [[eoi bindings] | [out6]]]
 *\
+
+(define vector-of-bindings
+	WorkingState ->
+		(let V (vector 10)
+                     _ (map (/. X (remember-bindings X V)) WorkingState)
+		     V))
+
+(define remember-bindings
+	[on _ | Bindings] V -> (map (/. X (remember-binding X V)) Bindings))
+
+(define remember-binding
+	[Output Wire] V ->
+		(let Contributions (trap-error (get Output bindings V) (/. X []))
+		     (put Output bindings [Wire | Contributions] V)))
+
+\*
+Once we have the associations built-up, we are free to output the corresponding Verilog wire-OR statements.  Note that these outputs are assumed to be module outputs, and declared in the module header.  Therefore, although technically wires, we use the assign statement instead.  It's a Verilog thing.
+*\
+
