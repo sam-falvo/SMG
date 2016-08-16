@@ -32,7 +32,7 @@ generation.
 	wire [2:0] out6 = R2 ? 3'b110 : 0;
 	wire [2:0] out7 = R6 ? 3'b111 : 0;
 
-	wire [2:0] next = |{out0,out1,out2,out3,out4,out5,out6,out7};
+	assign next = out0|out1|out2|out3|out4|out5|out6|out7;
 
 This is a lot of Verilog for something that you can more adequately describe in
 a case or casez statement.  However, case statements produce priority encoders
@@ -40,6 +40,11 @@ when synthesized, meaning one and only one desired outcome will fire.  In this
 simple example, it's not a big deal.  But, for more complex designs, you often
 want a "multi-hot" decode logic, so you can re-use minterms across multiple
 states.  This is how the 6502 instruction decoder works, for example.
+
+(Aside: why not use next = |{out0,out1,out2...}?  Because, {out0,out1,out2,...}
+evaluates to a concatenation of these outputs into a single bit-string, and
+then |{...} ORs them all down to a single bit.  That's not what we want; we
+want word-wise ORing of the outputs.)
 
 Another reason to avoid large case statements is that it's all-too-easy to
 accidentally forget to set an output, which causes latches to be synthesized
@@ -284,19 +289,23 @@ out100 (and friends) in a (label * (list symbol)) mapping.
 	[OutSym | _] -> [OutSym (gensym out)])
 
 \*
-The final step is to transpose the matrix, so to speak, and extract out all the
-terms targeting next:
+The final step is to print out our assignments.  Here, we generate our wire-OR
+sequences.  For example:
+
+	assign next = out0|out1|out2|out3|out4|out5|out6|out7;
+*\
+
+(define filter-bindings
+	WorkingState -> (for-each-index (function print-assignments-in-bucket) (vector-of-bindings WorkingState)))
+
+\*
+To accomplish this, we in effect transpose what's left of our working state,
+thus associating all wires assigned to a given output and keeping them together
+for convenient iteration.  It's a relatively simple matter to go from this:
 
 	[next [out0 out1 out2 out3 out4 out5 out6 out7]]
 
-At this point, we generate our wire-OR sequence:
-
-	wire [2:0] next = |{out0,out1,out2,out3,out4,out5,out6,out7};
-
-We'll need to do this for every output the user provides us.  However, there's
-really no way of predicting how many outputs there will be.  Thus, I will use
-those associative functions again to let Shen decide how best to keep proper
-accounting of what we find.
+into an assignment statement such as you see in the previous chunk.
 
 The strategy is simple enough.  For each row in what's left of our working
 state, we process all the remaining output bindings.  For each binding we find,
@@ -312,23 +321,23 @@ into concrete terms, if we have the following structure:
 After stepping through the first element of the list, we discover next and irq
 as outputs, so our association database looks (logically!) like:
 
-	[[next bindings | [out0]] [irq bindings | [out1]]]
+	[[[next bindings] out0] [[irq bindings] out1]]
 
 After the next row is processed, we only find next, so our state becomes:
 
-	[[next bindings | [out2 out0]] [irq bindings | [out1]]]
+	[[[next bindings] out2 out0] [[irq bindings] out1]]
 
 and so on through the rest of the rows.  After all is done with, we should end
 up with an association structure like this:
 
-	[[[next bindings] | [out5 out4 out3 out2 out0]]
-	 [[irq bindings] | [out4 out1]]
-	 [[eoi bindings] | [out6]]]
+	[[[next bindings] out5 out4 out3 out2 out0]
+	 [[irq bindings] out4 out1]
+	 [[eoi bindings] out6]]
 *\
 
 (define vector-of-bindings
 	WorkingState ->
-		(let V (vector 10)
+		(let V (vector 100)
                      _ (map (/. X (remember-bindings X V)) WorkingState)
 		     V))
 
@@ -341,6 +350,43 @@ up with an association structure like this:
 		     (put Output bindings [Wire | Contributions] V)))
 
 \*
-Once we have the associations built-up, we are free to output the corresponding Verilog wire-OR statements.  Note that these outputs are assumed to be module outputs, and declared in the module header.  Therefore, although technically wires, we use the assign statement instead.  It's a Verilog thing.
+Once we have the associations built-up, we are free to output the corresponding
+Verilog wire-OR statements.  Note that these outputs are assumed to be module
+outputs, and declared in the module header.  Therefore, although technically
+wires, we use the assign statement instead.  It's a Verilog thing.
+
+We start by creating a procedure to call a function on a vector element if it
+exists.
 *\
+
+(define for-each-index
+	Fn V -> (for-each-index-h Fn V 1 (+ 1 (<-address V 0))))
+
+(define for-each-index-h
+	_ _ Max Max -> _
+	Fn V Index Max -> (do (trap-error (Fn (<-vector V Index)) (/. X []))
+					  (for-each-index-h Fn V (+ 1 Index) Max)))
+
+\*
+Once we can iterate over all the vector elements cleanly, we then want to
+iterate over the contents of a vector element.  Since we use (put) to construct
+our associations, it treats each vector as a hash bucket, multiple bindings can
+sit at a single element.  Thankfully, Shen uses lists for this, so iterating is
+a simple matter of (map)'ing.
+*\
+
+(define print-assignments-in-bucket
+	Bucket -> (map (function print-assignment) Bucket))
+
+\*
+An assignment takes the following form.  Note we don't have to specify a bus
+width; if it's required, it'll be part of the module's declaration:
+*\
+
+(define print-assignment
+	[[Output Label] | Terms] -> (output (make-string "assign ~A = ~A;~%" Output (ored Terms))))
+
+(define ored
+	[X | []] -> (as-string X)
+	[X | Xs] -> (make-string "~A|~A" (as-string X) (ored Xs)))
 
