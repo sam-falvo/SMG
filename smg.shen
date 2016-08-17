@@ -267,7 +267,12 @@ out100 (and friends) in a (label * (list symbol)) mapping.
 	Rule Assignments Labels -> (parallel-map (/. A L (plan-wire Rule A L)) Assignments Labels))
 
 (define plan-wire
-	Rule Assignment Label -> (wire-from-output-terms (head Assignment) (head (tail Label)) Rule (tail Assignment)))
+	Rule Assignment Label ->
+		(wire-from-output-terms (head Assignment) (head (tail Label)) Rule (tail Assignment))
+		where (cons? Assignment)
+	Rule Assignment Label ->
+		(wire-from-output-terms Assignment (head (tail Label)) Rule ["1"])
+		where (symbol? Assignment))
 
 (define wire-from-output-terms
 	Output Id Rule Terms ->
@@ -286,7 +291,8 @@ out100 (and friends) in a (label * (list symbol)) mapping.
 	[on Rn | Outputs] -> [on Rn | (map (function alloc-id) Outputs)])
 
 (define alloc-id
-	[OutSym | _] -> [OutSym (gensym out)])
+	[OutSym | _] -> [OutSym (gensym out)]
+	OutSym -> [OutSym (gensym out)]  where (symbol? OutSym))
 
 \*
 The final step is to print out our assignments.  Here, we generate our wire-OR
