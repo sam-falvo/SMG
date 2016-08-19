@@ -409,6 +409,8 @@ To produce the complete listing, use the following statement:
 	WorkingState -> (filter-bindings (filter-outputs (filter-recognizers WorkingState))))
 
 (define main
-	_ -> (let - (verilog-from-sm (load-smg-file "grayctr"))
-                    true))
+	[] -> (let - (verilog-from-sm (load-smg-file "grayctr"))
+                     true)
+	[InputFile | _] -> (let - (verilog-from-sm (load-smg-file InputFile))
+				  true))
 
