@@ -1,6 +1,8 @@
+#! /usr/bin/env shen_run_sbcl
+
 \*
 I want a program that aids in the design of Verilog specifically for the
-purposes of instruction decoding.  Hence, "Generator" is essentially a tool to
+purposes of instruction decoding.  Hence, "SMG" is essentially a tool to
 convert higher-level, or at least more convenient, descriptions of state
 recognizers and desired actions into corresponding Verilog statements.  The
 Verilog that is generated is intended to be portable across both commercial and
@@ -74,7 +76,8 @@ We can store this example in a file called `grayctr` (no file extension for
 convenience).  This is valid Shen code, so "loading" it implies evaluating it.
 *\
 
-(set grayctr (eval (head (read-file "grayctr"))))
+(define load-smg-file
+	F -> (eval (head (read-file F))))
 
 \*
 To get from this to the desired output, we need to apply a number of
@@ -93,7 +96,7 @@ entries with the symbolic wire names corresponding to them.
 	wire R6 = (ctr == 3'b101);
 	wire R7 = (ctr == 3'b100);
 
-	\\ Generator working state
+	\\ SMG working state
 
 	[[on R0 [next 3'b001]]
 	 [on R1 [next 3'b011]]
@@ -214,8 +217,8 @@ frequently.
 \*
 After recognizers have been extracted, outputs need to be extracted as well.
 Each output receives its own corresponding wire declaration.  At this point,
-Generator will need to know how big the wire fields have to be.  A separate
-list input to Generator can provide this information; e.g., [[next "[2:0]"]
+SMG will need to know how big the wire fields have to be.  A separate
+list input to SMG can provide this information; e.g., [[next "[2:0]"]
 ...], but for now I just use Shen's (get) and (put) associative relation
 functions.  E.g., (put next bus-spec "[2:0]") ought to do the trick.
 
@@ -243,7 +246,7 @@ functions.  E.g., (put next bus-spec "[2:0]") ought to do the trick.
 
 The outX signals aren't in the same order as our hypothetical, hand-written
 example, but that's of no consequence.  As long as the signals are uniquely
-identified, and Generator properly accounts for them, things should just work.
+identified, and SMG properly accounts for them, things should just work.
 outX symbols are similarly generated with (gensym out).
 
 Given a list of the form [on Rn [O1 V1] [O2 V2] ...], we want to generate
@@ -399,9 +402,13 @@ width; if it's required, it'll be part of the module's declaration:
 \*
 To produce the complete listing, use the following statement:
 
-	(verilog-from-sm (value grayctr))
+	(verilog-from-sm (load-smg-file "grayctr"))
 *\
 
 (define verilog-from-sm
 	WorkingState -> (filter-bindings (filter-outputs (filter-recognizers WorkingState))))
+
+(define main
+	_ -> (let - (verilog-from-sm (load-smg-file "grayctr"))
+                    true))
 
