@@ -4,6 +4,11 @@ This project adheres to [Calendar Versioning](http://calver.org/).
 # Change log
 
 ## [Unreleased]
+### Added
+- Generates Verilog module and endmodule brackets.
+
+#### EXPERIMENTAL
+- Explicit input and output declaration in module syntax.
 
 ## [2016.1.0]
 ### Added

@@ -16,6 +16,11 @@ a simple a 3-bit Grey-code counter.  Here's the corresponding Verilog that we
 want to generate.  For convenience, we split recognizers from intended output
 generation.
 
+	module XYZ(
+		input [2:0] ctr,
+		output [2:0] next
+	);
+
 	wire R0 = (ctr == 3'b000);
 	wire R1 = (ctr == 3'b001);
 	wire R2 = (ctr == 3'b010);
@@ -35,6 +40,8 @@ generation.
 	wire [2:0] out7 = R6 ? 3'b111 : 0;
 
 	assign next = out0|out1|out2|out3|out4|out5|out6|out7;
+
+	endmodule
 
 This is a lot of Verilog for something that you can more adequately describe in
 a case or casez statement.  However, case statements produce priority encoders
@@ -63,7 +70,10 @@ Let's get back to our example.  Knowing the desired output, let's look at how
 we can simply generate the above from idealized input in Shen S-expression
 syntax.  Let's try this:
 
-	[[on [[ctr 3'b000]] [next 3'b001]]
+	[[module
+	  &input [ctr "[2:0]"]
+	  &output [next "[2:0]"]]
+	 [on [[ctr 3'b000]] [next 3'b001]]
 	 [on [[ctr 3'b001]] [next 3'b011]]
 	 [on [[ctr 3'b011]] [next 3'b010]]
 	 [on [[ctr 3'b010]] [next 3'b110]]
@@ -408,9 +418,119 @@ To produce the complete listing, use the following statement:
 (define verilog-from-sm
 	WorkingState -> (filter-bindings (filter-outputs (filter-recognizers WorkingState))))
 
+\*
+When shen_run[1] invokes SMG, it will invoke (main [ARGS]).  Right now, we only
+take an input filename, which allows us to specify the file to load.
+
+Notes:
+
+1.  shen_run is a program used to launch this program in a way compatible with
+    most Unix or Windows command-line interfaces.
+*\
+
 (define main
-	[] -> (let - (verilog-from-sm (load-smg-file "grayctr"))
-                     true)
-	[InputFile | _] -> (let - (verilog-from-sm (load-smg-file InputFile))
-				  true))
+	[] -> (do (output "Expected name of .smg file to process.~%") false)
+	[InputFile | _] -> (verilog-module (load-smg-file InputFile)))
+
+\*
+A Verilog module consists of several sections:
+
+1. module container, which provides the name of the module to the Verilog compiler.
+2. Module parameters, listing all inputs and outputs, and their bus widths if provided.
+3. The module body, which we described earlier in this document.
+4. "endmodule;" to close the module container.
+
+We haven't yet processed the rest of the state-machine truth table content,
+so we don't yet know what our inputs and outputs are.  So, for the time being,
+the user must list them in the module clause in the input file.
+
+We use an associative vector to record our state.  Even for a good-sized state machine,
+a length of 20 ought to be plenty for adequate performance.  If you need to go faster,
+consider lengthening the context vector.
+*\
+
+(define verilog-module
+	[[module Name | MParams] | Body] ->
+		(let Context (vector 20)
+		     -       (process-module-decl Name MParams Context)
+		     -       (output (make-string "module ~A(~%" Name))
+		     -       (output-module-params Context)
+		     -       (output "~%)~%")
+		     -       (verilog-from-sm Body)
+		     -       (output "endmodule;~%")
+		     true)
+	X -> (error (make-string "Expected module clause; got:~%~S" X)))
+
+\*
+(process-module-decl) constructs a module in the context database.
+The "root" of this semantic net is "module" --(name)-> X, where
+X provides the name of the module being processed.
+
+From there, X --(input)-> and X --(output)-> can be used to recover the modules
+inputs and outputs, respectively.
+
+Given any input or output signal S, S --(bus-spec)-> can be used to recover any
+bus specification attached to that signal.  If this relationship is not
+declared, then no bus-spec was provided, and we can safely assume it's just a
+single-bit signal.
+*\
+
+(define process-module-decl
+	Name Params DB ->
+		(do (put module name Name DB)
+		    (handle-params Name Params DB)))
+
+(define handle-params
+	_ [] _ -> true
+	Module [&input Ins | Rest] DB -> (do (map (/. I (handle-signal Module input I DB)) Ins)
+						  (handle-params Module Rest DB))
+	Module [&output Outs | Rest] DB -> (do (map (/. O (handle-signal Module output O DB)) Outs)
+						    (handle-params Module Rest DB))
+	_ X _ -> (error (make-string "handle-params: Unknown module parameter: ~R" X)))
+
+(define handle-signal
+	Module Type [Signal BusSpec] DB -> (do (remember-signal Module Type Signal DB)
+					       (remember-bus-spec Signal BusSpec DB))
+	Module Type Signal DB -> (remember-signal Module Type Signal DB))
+
+(define remember-bus-spec
+	Signal BusSpec DB -> (put Signal bus-spec BusSpec DB))
+
+(define remember-signal
+	Module Type Signal DB -> (put Module Type (cons Signal (get-with-default Module Type [] DB)) DB))
+
+\*
+When working with properties, (get) will yield an error if you attempt to
+retrieve a non-existent relationship.  However, in this application at least,
+such things are quite common-place.  Instead of dealing with these on a
+case-by-case basis, we create our own version of (get) which lets us set a
+reasonable default instead of yielding an error.
+*\
+
+(define get-with-default
+	Key Relation Default DB -> (trap-error (get Key Relation DB) (/. E Default)))
+
+\*
+The parameter list is a comma-delimited list of input or output clauses in the
+module's parameter list.
+*\
+
+(define output-module-params
+	DB -> (let InputStrings  (plan-strings DB input)
+		   OutputStrings (plan-strings DB output)
+		   -             (output (join-string (intersperse (append InputStrings OutputStrings) ",~%")))
+	       true))
+
+(define plan-strings
+	DB Type -> (let Module (get module name DB)
+			Signals (get-with-default Module Type [] DB)
+			(map (/. Sig (plan-string Sig Type DB)) Signals)))
+
+(define plan-string
+	Signal Type DB -> (let BusSpec (get-with-default Signal bus-spec "" DB)
+			       (make-string "c#9;~A ~Ac#9;~A" Type BusSpec Signal)))
+
+(define intersperse
+	[X | []] _ -> [X]
+	[X | Xs] Boundary -> [X Boundary | (intersperse Xs Boundary)])
 
