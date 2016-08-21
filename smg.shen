@@ -194,6 +194,7 @@ numbers).  They'll all be flattened into strings courtesy of (as-string) and
 
 (define and-term
 	X            -> (and-term [X])  where (symbol? X)
+	X            -> (and-term [(intern X)])  where (string? X)
 	[LHS | []]   ->
 		(let Term       (as-string LHS)
 		     IsNegated  (= "~" (hdstr Term))
@@ -438,7 +439,7 @@ A Verilog module consists of several sections:
 1. module container, which provides the name of the module to the Verilog compiler.
 2. Module parameters, listing all inputs and outputs, and their bus widths if provided.
 3. The module body, which we described earlier in this document.
-4. "endmodule;" to close the module container.
+4. "endmodule" to close the module container.
 
 We haven't yet processed the rest of the state-machine truth table content,
 so we don't yet know what our inputs and outputs are.  So, for the time being,
@@ -455,9 +456,10 @@ consider lengthening the context vector.
 		     -       (process-module-decl Name MParams Context)
 		     -       (output (make-string "module ~A(~%" Name))
 		     -       (output-module-params Context)
-		     -       (output "~%)~%")
+		     -       (output "~%);~%")
+		     -       (output-internal-wires Context)
 		     -       (verilog-from-sm Body)
-		     -       (output "endmodule;~%")
+		     -       (output "endmodule~%")
 		     true)
 	X -> (error (make-string "Expected module clause; got:~%~S" X)))
 
@@ -486,6 +488,8 @@ single-bit signal.
 						  (handle-params Module Rest DB))
 	Module [&output Outs | Rest] DB -> (do (map (/. O (handle-signal Module output O DB)) Outs)
 						    (handle-params Module Rest DB))
+	Module [&wire Ws | Rest] DB -> (do (map (/. W (handle-signal Module wire W DB)) Ws)
+					   (handle-params Module Rest DB))
 	_ X _ -> (error (make-string "handle-params: Unknown module parameter: ~R" X)))
 
 (define handle-signal
@@ -531,6 +535,22 @@ module's parameter list.
 			       (make-string "c#9;~A ~Ac#9;~A" Type BusSpec Signal)))
 
 (define intersperse
+	[] _ -> []
 	[X | []] _ -> [X]
 	[X | Xs] Boundary -> [X Boundary | (intersperse Xs Boundary)])
+
+\*
+Most designs will internally declare a set of flags for convenient use.  This
+not only cuts down on logic size, but can make SMG source code easier to read.
+However, we must make sure to declare these wires to Verilog before we use them,
+or we risk use-before-definition errors in synthesis tools.
+*\
+
+(define output-internal-wires
+	DB -> (let Module (get module name DB)
+		   (map (/. W (output-internal-wire W DB)) (get-with-default Module wire [] DB))))
+
+(define output-internal-wire
+	W DB -> (let BusSpec (get-with-default W bus-spec "" DB)
+		     (output (make-string "wire ~A ~A;~%" BusSpec W))))
 
